@@ -1,0 +1,4 @@
+# Envio de email via Gmail API usando Application Default Credentials (ADC).
+# O cliente do Asana usa apenas a biblioteca padrão (urllib), sem dependências.
+google-auth>=2.30.0
+google-api-python-client>=2.130.0
