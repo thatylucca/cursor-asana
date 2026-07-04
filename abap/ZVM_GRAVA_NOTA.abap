@@ -114,7 +114,18 @@ FUNCTION zvm_grava_nota.
 
 * Normalização do NFNUM após migração NUMC(6) -> CHAR(9) - tsilva 03.07.2026
   DATA: vl_nfnum_n9 TYPE n LENGTH 9,
-        vl_nfnum_n6 TYPE n LENGTH 6.
+        vl_nfnum_n6 TYPE n LENGTH 6,
+        lv_nfnum     TYPE zvm_nf_in-nfnum,
+        lv_series    TYPE zvm_nf_in-series,
+        lv_sales_org TYPE zvm_nf_in-sales_org,
+        lv_tipo_nf   TYPE zvm_nf_in-tipo_nf,
+        lv_numemb    TYPE zvm_nf_in-numemb,
+        lv_werks     TYPE zvm_nf_in-werks,
+        lv_stcd1     TYPE zsd_nfc_sintegra-stcd1,
+        lv_vbeln_chk TYPE vbeln,
+        lv_lgort     TYPE lgort_d,
+        lv_vstel     TYPE zvm_nf_in-vstel,
+        lv_prog_chk  TYPE zvm_nemb.
 
   FIELD-SYMBOLS: <ls_t1_nf>         TYPE zvm_nf_in,
                  <ls_t2_nf_it>      TYPE zvm_nf_it_in,
@@ -151,14 +162,21 @@ FUNCTION zvm_grava_nota.
 
       LOOP AT t1_nf ASSIGNING <ls_t1_nf>.
 
-        IF ( <ls_t1_nf>-nfnum IS INITIAL OR <ls_t1_nf>-series IS INITIAL ).
+        lv_nfnum     = <ls_t1_nf>-nfnum.
+        lv_series    = <ls_t1_nf>-series.
+        lv_sales_org = <ls_t1_nf>-sales_org.
+        lv_tipo_nf   = <ls_t1_nf>-tipo_nf.
+        lv_numemb    = <ls_t1_nf>-numemb.
+        lv_werks     = <ls_t1_nf>-werks.
+
+        IF ( lv_nfnum IS INITIAL OR lv_series IS INITIAL ).
           CONTINUE.
         ENDIF.
 
-        SELECT SINGLE @abap_true
+        SELECT SINGLE numemb
           FROM zvm_prog_emb
-          INTO @DATA(lv_prog_blocked)
-          WHERE numemb = @<ls_t1_nf>-numemb
+          INTO lv_prog_chk
+          WHERE numemb = lv_numemb
             AND status >= '8'.
 
         IF sy-subrc = 0.
@@ -171,10 +189,10 @@ FUNCTION zvm_grava_nota.
 
         SELECT SINGLE *
           FROM zvm_lock_gravanf
-          INTO @ls_zvm_lock_gravanf
-          WHERE nfnum     = @<ls_t1_nf>-nfnum
-            AND series    = @<ls_t1_nf>-series
-            AND sales_org = @<ls_t1_nf>-sales_org.
+          INTO ls_zvm_lock_gravanf
+          WHERE nfnum     = lv_nfnum
+            AND series    = lv_series
+            AND sales_org = lv_sales_org.
 
         IF sy-subrc EQ 0.
           CONTINUE.
@@ -229,11 +247,11 @@ FUNCTION zvm_grava_nota.
 
           SELECT SINGLE *
             FROM zvm_nf
-            INTO @ls_zvm_nf
-            WHERE nfnum     = @<ls_t1_nf>-nfnum
-              AND series    = @<ls_t1_nf>-series
-              AND sales_org = @<ls_t1_nf>-sales_org
-              AND tipo_nf   = @<ls_t1_nf>-tipo_nf
+            INTO ls_zvm_nf
+            WHERE nfnum     = lv_nfnum
+              AND series    = lv_series
+              AND sales_org = lv_sales_org
+              AND tipo_nf   = lv_tipo_nf
               AND ( doctype = 'ZGEN' OR doctype = 'ZDMA' OR
                     doctype = 'ZNFC' OR doctype = 'ZDNC' ).
 
@@ -245,11 +263,11 @@ FUNCTION zvm_grava_nota.
 
           SELECT SINGLE *
             FROM zvm_nf
-            INTO @ls_zvm_nf
-            WHERE nfnum     = @<ls_t1_nf>-nfnum
-              AND series    = @<ls_t1_nf>-series
-              AND sales_org = @<ls_t1_nf>-sales_org
-              AND tipo_nf   = @<ls_t1_nf>-tipo_nf
+            INTO ls_zvm_nf
+            WHERE nfnum     = lv_nfnum
+              AND series    = lv_series
+              AND sales_org = lv_sales_org
+              AND tipo_nf   = lv_tipo_nf
               AND ( doctype = 'ZFGR' OR doctype = 'ZFPR' OR
                     doctype = 'ZEAV' OR doctype = 'ZSAV' ).
 
@@ -442,25 +460,25 @@ FUNCTION zvm_grava_nota.
 
               UPDATE zvm_nf SET estornado  = 'X'
                                 st_estorno = v_sit_estorno
-                      WHERE nfnum     = @<ls_t1_nf>-nfnum
-                        AND series    = @<ls_t1_nf>-series
-                        AND sales_org = @<ls_t1_nf>-sales_org
-                        AND tipo_nf   = @<ls_t1_nf>-tipo_nf
-                        AND doctype   = @ls_zvm_nf-doctype.
+                      WHERE nfnum     = lv_nfnum
+                        AND series    = lv_series
+                        AND sales_org = lv_sales_org
+                        AND tipo_nf   = lv_tipo_nf
+                        AND doctype   = ls_zvm_nf-doctype.
 
-              v_nefnum = <ls_t1_nf>-nfnum.
+              v_nefnum = lv_nfnum.
 
-              DELETE FROM zvm_boletos_med WHERE sales_org = @<ls_t1_nf>-sales_org
-                                            AND nfenum    = @v_nefnum
-                                            AND series    = @<ls_t1_nf>-series.
+              DELETE FROM zvm_boletos_med WHERE sales_org = lv_sales_org
+                                            AND nfenum    = v_nefnum
+                                            AND series    = lv_series.
 
             ELSE.
               UPDATE zvm_nf SET estornado  = 'X'
                                 st_estorno = '1'
-               WHERE nfnum     = @<ls_t1_nf>-nfnum
-                 AND series    = @<ls_t1_nf>-series
-                 AND sales_org = @<ls_t1_nf>-sales_org
-                 AND tipo_nf   = @<ls_t1_nf>-tipo_nf.
+               WHERE nfnum     = lv_nfnum
+                 AND series    = lv_series
+                 AND sales_org = lv_sales_org
+                 AND tipo_nf   = lv_tipo_nf.
             ENDIF.
 
             CALL FUNCTION 'ZCO_PROCESSA_ESTORNO'
@@ -488,16 +506,16 @@ FUNCTION zvm_grava_nota.
 
           IF ( ls_zvm_nf-doctype = 'ZNFC' OR ls_zvm_nf-doctype = 'ZDNC' ) AND <ls_t1_nf>-code IS NOT INITIAL.
 
-            UPDATE zvm_nf SET authcod      = @<ls_t1_nf>-authcod
-                              authdate     = @<ls_t1_nf>-authdate
-                              authtime     = @<ls_t1_nf>-authtime
-                              code         = @<ls_t1_nf>-code
-                              chave_acesso = @<ls_t1_nf>-chave_acesso
-                    WHERE nfnum     = @<ls_t1_nf>-nfnum
-                      AND series    = @<ls_t1_nf>-series
-                      AND sales_org = @<ls_t1_nf>-sales_org
-                      AND tipo_nf   = @<ls_t1_nf>-tipo_nf
-                      AND doctype   = @ls_zvm_nf-doctype.
+            UPDATE zvm_nf SET authcod      = <ls_t1_nf>-authcod
+                              authdate     = <ls_t1_nf>-authdate
+                              authtime     = <ls_t1_nf>-authtime
+                              code         = <ls_t1_nf>-code
+                              chave_acesso = <ls_t1_nf>-chave_acesso
+                    WHERE nfnum     = lv_nfnum
+                      AND series    = lv_series
+                      AND sales_org = lv_sales_org
+                      AND tipo_nf   = lv_tipo_nf
+                      AND doctype   = ls_zvm_nf-doctype.
 
             COMMIT WORK.
           ENDIF.
@@ -530,18 +548,20 @@ FUNCTION zvm_grava_nota.
         CASE <ls_t1_nf>-tipo_nf.
           WHEN c_cupom_fiscal.
             IF <ls_t1_nf>-doctype = 'ZGEN' OR <ls_t1_nf>-doctype = 'ZNFC'.
-              SELECT MIN( vstel ) INTO @<ls_t1_nf>-vstel FROM tvswz
-               WHERE werks EQ @<ls_t1_nf>-werks.
+              SELECT MIN( vstel ) INTO lv_vstel FROM tvswz
+               WHERE werks EQ lv_werks.
+              <ls_t1_nf>-vstel = lv_vstel.
             ELSE.
-              SELECT MAX( vstel ) INTO @<ls_t1_nf>-vstel FROM tvswz
-              WHERE werks EQ @<ls_t1_nf>-werks.
+              SELECT MAX( vstel ) INTO lv_vstel FROM tvswz
+              WHERE werks EQ lv_werks.
+              <ls_t1_nf>-vstel = lv_vstel.
             ENDIF.
           WHEN c_nota_caminhao.
             CLEAR v_xfluvial.
-            SELECT SINGLE xfluvial INTO @v_xfluvial
+            SELECT SINGLE xfluvial INTO v_xfluvial
               FROM zvm_nota_control
-             WHERE series = @<ls_t1_nf>-series
-               AND werks  = @<ls_t1_nf>-werks.
+             WHERE series = lv_series
+               AND werks  = lv_werks.
 
             IF <ls_t1_nf>-doctype = 'ZFGR'.
               v_xgranel = 'X'.
@@ -549,32 +569,33 @@ FUNCTION zvm_grava_nota.
               v_xgranel = space.
             ENDIF.
 
-            SELECT SINGLE vstel INTO @<ls_t1_nf>-vstel
+            SELECT SINGLE vstel INTO lv_vstel
               FROM zvm_cfg_fat
-              WHERE werks    EQ @<ls_t1_nf>-werks AND
-                    xgranel  EQ @v_xgranel   AND
-                    xfluvial EQ @v_xfluvial.
+              WHERE werks    EQ lv_werks AND
+                    xgranel  EQ v_xgranel   AND
+                    xfluvial EQ v_xfluvial.
+            <ls_t1_nf>-vstel = lv_vstel.
         ENDCASE.
 
         w_qtdiaszerado = 'N'.
         IF <ls_t1_nf>-extra = 'X'.
           SELECT * FROM zapp_rev_config
-          INTO TABLE @it_rev_config.
+          INTO TABLE it_rev_config.
 
           READ TABLE it_rev_config INTO wa_rev_config WITH KEY chave = 'ZBOL'.
           FIND <ls_t1_nf>-zterm IN wa_rev_config-valor MATCH OFFSET pos.
 
           IF sy-subrc NE 0.
             CLEAR: w_ztag1.
-            SELECT SINGLE ztag1 INTO @w_ztag1 FROM t052
-            WHERE zterm EQ @<ls_t1_nf>-zterm.
+            SELECT SINGLE ztag1 INTO w_ztag1 FROM t052
+            WHERE zterm EQ <ls_t1_nf>-zterm.
             IF w_ztag1 = 0.
               w_qtdiaszerado = 'S'.
             ELSE.
               w_qtdias = w_ztag1 + 1.
-              SELECT SINGLE zterm, ztag1 INTO (@w_zterm, @w_ztag1) FROM t052
+              SELECT SINGLE zterm ztag1 INTO (w_zterm, w_ztag1) FROM t052
               WHERE zterm LIKE 'Z%' AND
-              ztag1 EQ @w_qtdias AND
+              ztag1 EQ w_qtdias AND
               xsplt NE 'X'.
             ENDIF.
             IF sy-subrc       NE 0 OR
@@ -689,7 +710,8 @@ FUNCTION zvm_grava_nota.
           AND ls_zvm_nf-vbeln_ori IS NOT INITIAL.
           CLEAR w_vbeln_ori.
           PACK ls_zvm_nf-vbeln_ori TO w_vbeln_ori.
-          SELECT SINGLE @abap_true FROM vbak INTO @DATA(lv_vbak_exists) WHERE vbeln EQ @ls_zvm_nf-vbeln_ori.
+          SELECT SINGLE vbeln FROM vbak INTO lv_vbeln_chk
+            WHERE vbeln EQ ls_zvm_nf-vbeln_ori.
           IF sy-subrc = 0.
             CALL FUNCTION 'ZMOB_DEL_ORDEM'
               EXPORTING
@@ -747,10 +769,11 @@ FUNCTION zvm_grava_nota.
 
             WHEN c_nota_caminhao.
 
-              SELECT SINGLE lgort INTO @<ls_t2_nf_it>-lgort
+              SELECT SINGLE lgort INTO lv_lgort
                  FROM zvm_nota_control
-                 WHERE werks EQ @<ls_t1_nf>-werks AND
-                       series EQ @<ls_t1_nf>-series.
+                 WHERE werks EQ lv_werks AND
+                       series EQ lv_series.
+              <ls_t2_nf_it>-lgort = lv_lgort.
 
               IF <ls_t2_nf_it>-matnr EQ 'GLP'.
                 v_somapeso = v_somapeso + <ls_t2_nf_it>-menge.
@@ -824,13 +847,13 @@ FUNCTION zvm_grava_nota.
 
         CLEAR ti_max_nf.
 
-        SELECT series, werks, MAX( nfnum ) AS nfnum
-          INTO TABLE @ti_max_nf
+        SELECT series werks MAX( nfnum )
+          INTO TABLE ti_max_nf
           FROM zvm_nf
-         WHERE tipo_nf <> @c_cupom_fiscal
-           AND tipo_nf <> @c_orgao_publico
+         WHERE tipo_nf <> c_cupom_fiscal
+           AND tipo_nf <> c_orgao_publico
            AND doctype = 'ZGEN'
-         GROUP BY series, werks.
+         GROUP BY series werks.
 
         SORT ti_max_nf BY series werks ASCENDING.
 
@@ -838,9 +861,9 @@ FUNCTION zvm_grava_nota.
 
           SELECT SINGLE *
             FROM zvm_nota_control
-            INTO @ls_zvm_nota_control
-           WHERE series = @ls_max_nf-series
-             AND werks = @ls_max_nf-werks.
+            INTO ls_zvm_nota_control
+           WHERE series = ls_max_nf-series
+             AND werks = ls_max_nf-werks.
 
           IF sy-subrc = 0.
             vl_nfnum_n6 = ls_max_nf-nfnum.
@@ -866,14 +889,14 @@ FUNCTION zvm_grava_nota.
 
         CLEAR ti_max_nf.
 
-        SELECT series, werks, MAX( nfnum ) AS nfnum
-          INTO TABLE @ti_max_nf
+        SELECT series werks MAX( nfnum )
+          INTO TABLE ti_max_nf
           FROM zvm_nf
-         WHERE tipo_nf <> @c_cupom_fiscal
-           AND tipo_nf <> @c_orgao_publico
+         WHERE tipo_nf <> c_cupom_fiscal
+           AND tipo_nf <> c_orgao_publico
            AND ( doctype = 'ZFPR' OR doctype = 'ZFGR' OR
                  doctype = 'ZEAV' OR doctype = 'ZSAV' )
-         GROUP BY series, werks.
+         GROUP BY series werks.
 
         SORT ti_max_nf BY series werks ASCENDING.
 
@@ -881,9 +904,9 @@ FUNCTION zvm_grava_nota.
 
           SELECT SINGLE *
             FROM zvm_nota_control
-            INTO @ls_zvm_nota_control
-           WHERE series = @ls_max_nf-series
-             AND werks  = @ls_max_nf-werks.
+            INTO ls_zvm_nota_control
+           WHERE series = ls_max_nf-series
+             AND werks  = ls_max_nf-werks.
 
           IF sy-subrc = 0.
             IF ls_zvm_nota_control-nfenum < ls_max_nf-nfnum.
@@ -919,16 +942,16 @@ FUNCTION zvm_grava_nota.
           CONTINUE.
         ENDIF.
 
-        SELECT SINGLE stcd1 INTO @DATA(lv_stcd1)
+        SELECT SINGLE stcd1 INTO lv_stcd1
           FROM zsd_nfc_sintegra
-          WHERE stcd1 = @ls_nf-cpf_nfce.
+          WHERE stcd1 = ls_nf-cpf_nfce.
 
         IF  sy-subrc EQ 0.
           CONTINUE.
         ENDIF.
 
-        SELECT SINGLE regio INTO @lv_regio
-          FROM zdepara_config WHERE vkorg = @ls_nf-sales_org.
+        SELECT SINGLE regio INTO lv_regio
+          FROM zdepara_config WHERE vkorg = ls_nf-sales_org.
 
         ls_nfc_sintegra-mandt = sy-mandt.
         ls_nfc_sintegra-stcd1 = ls_nf-cpf_nfce.
@@ -965,16 +988,16 @@ FORM clear_lock TABLES tb_nf.
 
     SELECT SINGLE *
       FROM zvm_lock_gravanf
-      INTO @ls_zvm_lock_gravanf
-      WHERE nfnum     = @ls_zvm_lock_gravanf-nfnum
-        AND series    = @ls_zvm_lock_gravanf-series
-        AND sales_org = @ls_zvm_lock_gravanf-sales_org.
+      INTO ls_zvm_lock_gravanf
+      WHERE nfnum     = ls_zvm_lock_gravanf-nfnum
+        AND series    = ls_zvm_lock_gravanf-series
+        AND sales_org = ls_zvm_lock_gravanf-sales_org.
 
     IF sy-subrc EQ 0.
       DELETE FROM zvm_lock_gravanf
-        WHERE nfnum     = @ls_zvm_lock_gravanf-nfnum
-          AND series    = @ls_zvm_lock_gravanf-series
-          AND sales_org = @ls_zvm_lock_gravanf-sales_org.
+        WHERE nfnum     = ls_zvm_lock_gravanf-nfnum
+          AND series    = ls_zvm_lock_gravanf-series
+          AND sales_org = ls_zvm_lock_gravanf-sales_org.
     ENDIF.
   ENDLOOP.
 

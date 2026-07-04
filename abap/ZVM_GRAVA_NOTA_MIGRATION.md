@@ -31,5 +31,7 @@ Os chamadores continuam usando `CALL FUNCTION ... TABLES` — nenhuma mudança n
 
 ## Observações
 
+- SQL usa **OpenSQL clássico** (sem `@`) com variáveis locais `lv_nfnum`, `lv_series`, etc. copiadas do field-symbol no início do loop — evita erros de escape misto.
+- `UPDATE ... SET` mantém sintaxe clássica (sem vírgulas entre campos).
 - `MOVE-CORRESPONDING` entre `ZVM_NF_IN` e `ZVM_NF` cobre diferenças de tipo entre estrutura de entrada e tabela persistente.
-- `ls_zvm_lock_gravanf` é declarada localmente no `FORM clear_lock`.
+- `i_reclist` / `i_objtxt`: sempre via `wa_reclist` / `wa_objtxt` + `APPEND ... TO`.
