@@ -3,11 +3,11 @@ FUNCTION zvm_grava_nota.
 *"*"Interface local:
 *"  IMPORTING
 *"     VALUE(I_DEBUG) TYPE  CHAR1 OPTIONAL
-*"  CHANGING
-*"      T1_NF           TYPE  STANDARD TABLE OF ZVM_NF_IN         OPTIONAL
-*"      T2_NF_IT        TYPE  STANDARD TABLE OF ZVM_NF_IT_IN      OPTIONAL
-*"      T3_NF_IT_COND   TYPE  STANDARD TABLE OF ZVM_NF_IT_COND_IN OPTIONAL
-*"      T4_NF_PAGTO     TYPE  STANDARD TABLE OF ZVM_NF_PAGTO_IN   OPTIONAL
+*"  TABLES
+*"      T1_NF STRUCTURE  ZVM_NF_IN OPTIONAL
+*"      T2_NF_IT STRUCTURE  ZVM_NF_IT_IN OPTIONAL
+*"      T3_NF_IT_COND STRUCTURE  ZVM_NF_IT_COND_IN OPTIONAL
+*"      T4_NF_PAGTO STRUCTURE  ZVM_NF_PAGTO_IN OPTIONAL
 *"  EXCEPTIONS
 *"      EX_ERRO_INS_NF
 *"      EX_PROG_BLOCKED
@@ -16,7 +16,7 @@ FUNCTION zvm_grava_nota.
 *"      EX_TABLE_BLOCKED
 *"----------------------------------------------------------------------
 *
-* Migração TABLES -> estruturas (work areas / tabelas tipadas) - 04.07.2026
+* Ajuste interno: work areas no lugar de header lines (interface TABLES mantida) - 04.07.2026
 *
   CONSTANTS: c_except_competition(70)  VALUE 'Processo não executado por conta da concorrência',
              c_except_invalid_date(70) VALUE 'Processo não executado por conta da data de emissão',
@@ -941,10 +941,10 @@ FUNCTION zvm_grava_nota.
       ENDLOOP.
 
       IF v_erro IS INITIAL.
-        PERFORM clear_lock USING t1_nf.
+        PERFORM clear_lock TABLES t1_nf.
       ELSE.
         ROLLBACK WORK.
-        PERFORM clear_lock USING t1_nf.
+        PERFORM clear_lock TABLES t1_nf.
         RAISE ex_erro_ins_nf.
       ENDIF.
   ENDTRY.
@@ -954,12 +954,12 @@ ENDFUNCTION.
 *&---------------------------------------------------------------------*
 *&      Form  clear_lock
 *&---------------------------------------------------------------------*
-FORM clear_lock USING pt_nf TYPE STANDARD TABLE OF zvm_nf_in.
+FORM clear_lock TABLES tb_nf.
 
   DATA: ls_nf               TYPE zvm_nf_in,
         ls_zvm_lock_gravanf TYPE zvm_lock_gravanf.
 
-  LOOP AT pt_nf INTO ls_nf.
+  LOOP AT tb_nf INTO ls_nf.
     CLEAR ls_zvm_lock_gravanf.
     MOVE-CORRESPONDING ls_nf TO ls_zvm_lock_gravanf.
 
