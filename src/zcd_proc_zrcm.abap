@@ -31,10 +31,11 @@ function ZCD_PROC_ZRCM.
 *                    Master Análise e Programação - D Sávio 14/12/2021 *
 *----------------------------------------------------------------------*
 * 003 - Após a confirmação do faturamento da ordem, para MATNR = 'B190'*
-*       com MARA-RAUBE = '3' ou '03', montar em memória o movimento    *
-*       561 (entrada inicial de estoque) via PERFORM interno           *
-*       ZF_MONTA_MOV_561, SEM CALL FUNCTION remoto e SEM postagem      *
-*       no SAP.                                                        *
+*       com MARA-RAUBE = '3' ou '03', postar o movimento 562 (estorno  *
+*       de entrada inicial / baixa de estoque) via PERFORM interno     *
+*       ZF_EXEC_MOV_562 que executa BAPI_GOODSMVT_CREATE +             *
+*       BAPI_TRANSACTION_COMMIT. Em caso de erro do BAPI, faz rollback *
+*       e aborta a function com COD_RETORNO = 'E012'.                  *
 *                                       D Sávio 30/09/2026             *
 *----------------------------------------------------------------------*
 data: wa_ordem_guid    type guid_32,
@@ -86,10 +87,11 @@ data: wa_ordem_guid    type guid_32,
       wa_qtmsg(03)     type n,
       wa_werks         type werks_d,
       v_raube          type raube,
-      it_vbap_561      type table of vbap,
-      wa_vbap_561      type          vbap,
-      v_raube_561      type raube,
-      wa_lgort_561     type lgort_d,
+      it_vbap_562      type table of vbap,
+      wa_vbap_562      type          vbap,
+      v_raube_562      type raube,
+      wa_lgort_562     type lgort_d,
+      wa_mblnr_562     type mblnr,
       wa_erro(1)       type c,
       wa_cod_retorno   type char4,
       wa_msg_retorno   type char100,
@@ -541,31 +543,45 @@ ranges: r_docnum for j_1bnferfcbatch-docnum.
 
 * Inicio Alteração 003 -     30.09.2026 ---------------------
 * Após a confirmação do faturamento da ordem (E_VBELN_VF preenchido),
-* se o item for MATNR = 'B190' com MARA-RAUBE = '3' ou '03', monta em
-* memória o movimento 561 (entrada inicial de estoque) via PERFORM
-* interno ZF_MONTA_MOV_561. NÃO faz CALL FUNCTION remoto e NÃO posta
-* nem ativa nada no SAP.
+* se o item for MATNR = 'B190' com MARA-RAUBE = '3' ou '03', posta o
+* movimento 562 (estorno de entrada inicial / baixa de estoque) via
+* PERFORM interno ZF_EXEC_MOV_562 (BAPI_GOODSMVT_CREATE +
+* BAPI_TRANSACTION_COMMIT). Em caso de erro do BAPI, faz rollback e
+* aborta a function com COD_RETORNO = 'E012'.
   if e_vbeln_vf is not initial.
-    refresh it_vbap_561.
-    select * from vbap into table it_vbap_561
+    refresh it_vbap_562.
+    select * from vbap into table it_vbap_562
       where vbeln = wa_ordem
         and matnr = 'B190'.
-    loop at it_vbap_561 into wa_vbap_561.
-      clear v_raube_561.
-      select single raube into v_raube_561 from mara
-        where matnr = wa_vbap_561-matnr.
-      if v_raube_561 = '3' or v_raube_561 = '03'.
-        wa_lgort_561 = wa_lgort.
-        if wa_lgort_561 is initial.
-          wa_lgort_561 = wa_vbap_561-lgort.
+    loop at it_vbap_562 into wa_vbap_562.
+      clear v_raube_562.
+      select single raube into v_raube_562 from mara
+        where matnr = wa_vbap_562-matnr.
+      if v_raube_562 = '3' or v_raube_562 = '03'.
+        wa_lgort_562 = wa_lgort.
+        if wa_lgort_562 is initial.
+          wa_lgort_562 = wa_vbap_562-lgort.
         endif.
-        perform zf_monta_mov_561 using wa_vbap_561-matnr
-                                       wa_vbap_561-werks
-                                       wa_lgort_561
-                                       wa_vbap_561-kwmeng
-                                       wa_vbap_561-vrkme.
+
+        clear: wa_cod_retorno, wa_msg_retorno, wa_mblnr_562.
+        perform zf_exec_mov_562 using    wa_vbap_562-matnr
+                                         wa_vbap_562-werks
+                                         wa_lgort_562
+                                         wa_vbap_562-kwmeng
+                                         wa_vbap_562-vrkme
+                                changing wa_cod_retorno
+                                         wa_msg_retorno
+                                         wa_mblnr_562.
+        if wa_cod_retorno is not initial.
+          cod_retorno = wa_cod_retorno.
+          msg_retorno = wa_msg_retorno.
+          exit. " sai do loop
+        endif.
       endif.
     endloop.
+    if wa_cod_retorno is not initial.
+      exit. " aborta a function module
+    endif.
   endif.
 * Final Alteração  003 -     30.09.2026 ---------------------
 
@@ -772,40 +788,78 @@ endform.
 
 
 *&---------------------------------------------------------------------*
-*&      Form  ZF_MONTA_MOV_561
+*&      Form  ZF_EXEC_MOV_562
 *&---------------------------------------------------------------------*
-* Monta em memória a estrutura de um movimento 561 (entrada inicial de
-* estoque) para o item recebido. NÃO faz CALL FUNCTION remoto (nada de
-* BAPI_GOODSMVT_CREATE) e NÃO posta nem ativa nada no SAP — o objetivo
-* é apenas preparar cabeçalho (BAPI2017_GM_HEAD_01), código de operação
-* (BAPI2017_GM_CODE = '05') e item (BAPI2017_GM_ITEM_CREATE com
-* MOVE_TYPE = '561') para consumo posterior por outra rotina.
+* Posta um movimento 562 (estorno de entrada inicial / baixa de
+* estoque) para o item recebido, chamando BAPI_GOODSMVT_CREATE e, em
+* caso de sucesso, BAPI_TRANSACTION_COMMIT com WAIT = 'X'. Em caso de
+* erro da BAPI (mensagens tipo 'E' ou 'A' em RETURN), executa
+* BAPI_TRANSACTION_ROLLBACK e devolve COD_RETORNO = 'E012' e a
+* MSG_RETORNO com o texto retornado pela BAPI. Em caso de sucesso
+* devolve o nº do documento de material em P_MBLNR.
 *----------------------------------------------------------------------*
-form zf_monta_mov_561 using p_matnr type matnr
-                            p_werks type werks_d
-                            p_lgort type lgort_d
-                            p_menge type kwmeng
-                            p_meins type vrkme.
+form zf_exec_mov_562 using    p_matnr   type matnr
+                              p_werks   type werks_d
+                              p_lgort   type lgort_d
+                              p_menge   type kwmeng
+                              p_meins   type vrkme
+                     changing p_cod_ret type char4
+                              p_msg_ret type char100
+                              p_mblnr   type mblnr.
 
-  data: ls_gm_head_01 type bapi2017_gm_head_01,
+  data: ls_gm_head    type bapi2017_gm_head_01,
+        ls_gm_headret type bapi2017_gm_head_ret,
         ls_gm_code    type bapi2017_gm_code,
         ls_gm_item    type bapi2017_gm_item_create,
-        lt_gm_item    type standard table of bapi2017_gm_item_create.
+        lt_gm_item    type standard table of bapi2017_gm_item_create,
+        lt_return     type standard table of bapiret2,
+        ls_return     type bapiret2.
 
-  clear: ls_gm_head_01, ls_gm_code, ls_gm_item, lt_gm_item.
+  clear: ls_gm_head, ls_gm_headret, ls_gm_code, ls_gm_item,
+         lt_gm_item, lt_return, ls_return,
+         p_cod_ret, p_msg_ret, p_mblnr.
 
-  ls_gm_head_01-pstng_date = sy-datum.
-  ls_gm_head_01-doc_date   = sy-datum.
-  ls_gm_head_01-pr_uname   = sy-uname.
+  ls_gm_head-pstng_date = sy-datum.
+  ls_gm_head-doc_date   = sy-datum.
+  ls_gm_head-pr_uname   = sy-uname.
 
-  ls_gm_code-gm_code = '05'.
+  ls_gm_code-gm_code = '03'. " MB1A - Outras saídas (movimento 562)
 
-  ls_gm_item-material   = p_matnr.
-  ls_gm_item-plant      = p_werks.
-  ls_gm_item-stge_loc   = p_lgort.
-  ls_gm_item-move_type  = '561'.
-  ls_gm_item-entry_qnt  = p_menge.
-  ls_gm_item-entry_uom  = p_meins.
+  ls_gm_item-material  = p_matnr.
+  ls_gm_item-plant     = p_werks.
+  ls_gm_item-stge_loc  = p_lgort.
+  ls_gm_item-move_type = '562'.
+  ls_gm_item-entry_qnt = p_menge.
+  ls_gm_item-entry_uom = p_meins.
   append ls_gm_item to lt_gm_item.
+
+  call function 'BAPI_GOODSMVT_CREATE'
+    exporting
+      goodsmvt_header  = ls_gm_head
+      goodsmvt_code    = ls_gm_code
+    importing
+      goodsmvt_headret = ls_gm_headret
+    tables
+      goodsmvt_item    = lt_gm_item
+      return           = lt_return.
+
+  clear ls_return.
+  read table lt_return into ls_return with key type = 'A'.
+  if sy-subrc <> 0.
+    read table lt_return into ls_return with key type = 'E'.
+  endif.
+  if sy-subrc = 0.
+    call function 'BAPI_TRANSACTION_ROLLBACK'.
+    p_cod_ret = 'E012'.
+    concatenate 'Erro mov 562 material' p_matnr '-' ls_return-message
+                                    into p_msg_ret separated by space.
+    exit.
+  endif.
+
+  call function 'BAPI_TRANSACTION_COMMIT'
+    exporting
+      wait = 'X'.
+
+  p_mblnr = ls_gm_headret-mat_doc.
 
 endform.
