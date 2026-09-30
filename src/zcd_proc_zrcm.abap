@@ -30,10 +30,12 @@ function ZCD_PROC_ZRCM.
 *       no fornecimento                                                *
 *                    Master Análise e Programação - D Sávio 14/12/2021 *
 *----------------------------------------------------------------------*
-* 003 - Para MATNR = 'B190' com MARA-RAUBE = '3' ou '03', montar em    *
-*       memória o movimento 561 (entrada inicial de estoque) via       *
-*       PERFORM interno ZF_MONTA_MOV_561, SEM CALL FUNCTION remoto e   *
-*       SEM postagem no SAP.                                           *
+* 003 - Após a confirmação do faturamento da ordem, para MATNR = 'B190'*
+*       com MARA-RAUBE = '3' ou '03', montar em memória o movimento    *
+*       561 (entrada inicial de estoque) via PERFORM interno           *
+*       ZF_MONTA_MOV_561, SEM CALL FUNCTION remoto e SEM postagem      *
+*       no SAP.                                                        *
+*                                       D Sávio 30/09/2026             *
 *----------------------------------------------------------------------*
 data: wa_ordem_guid    type guid_32,
       it_ordem_h       type table of zmob_ordem,
@@ -84,6 +86,10 @@ data: wa_ordem_guid    type guid_32,
       wa_qtmsg(03)     type n,
       wa_werks         type werks_d,
       v_raube          type raube,
+      it_vbap_561      type table of vbap,
+      wa_vbap_561      type          vbap,
+      v_raube_561      type raube,
+      wa_lgort_561     type lgort_d,
       wa_erro(1)       type c,
       wa_cod_retorno   type char4,
       wa_msg_retorno   type char100,
@@ -275,30 +281,12 @@ ranges: r_docnum for j_1bnferfcbatch-docnum.
               raube = v_raube.
 
 
-* Inicio Alteração 003 -     30.09.2026 ---------------------
-*      if V_RAUBE = '3' and wa_vbap-matnr = 'B190'.
-*        select single lgort into wa_lgort from zvm_cfg_fat
-*          where werks    eq wa_werks and
-*                vstel    eq wa_vstel and
-*                xfluvial ne 'X' and xgranel ne 'X'.
-*      endif.
-      if wa_vbap-matnr = 'B190' and
-         ( v_raube = '3' or v_raube = '03' ).
+      if V_RAUBE = '3' and wa_vbap-matnr = 'B190'.
         select single lgort into wa_lgort from zvm_cfg_fat
           where werks    eq wa_werks and
                 vstel    eq wa_vstel and
                 xfluvial ne 'X' and xgranel ne 'X'.
-
-        " Monta em memória o movimento 561 (entrada inicial de estoque).
-        " NÃO chama CALL FUNCTION remoto e NÃO posta nada no SAP —
-        " apenas prepara as estruturas para uso posterior.
-        perform zf_monta_mov_561 using wa_vbap-matnr
-                                       wa_werks
-                                       wa_lgort
-                                       wa_vbap-kwmeng
-                                       wa_vbap-vrkme.
       endif.
-* Final Alteração  003 -     30.09.2026 ---------------------
 
 
 * Final Alteração  002 -     14.12.2021 ---------------------
@@ -550,6 +538,36 @@ ranges: r_docnum for j_1bnferfcbatch-docnum.
       endloop.
     endif.
   endif.
+
+* Inicio Alteração 003 -     30.09.2026 ---------------------
+* Após a confirmação do faturamento da ordem (E_VBELN_VF preenchido),
+* se o item for MATNR = 'B190' com MARA-RAUBE = '3' ou '03', monta em
+* memória o movimento 561 (entrada inicial de estoque) via PERFORM
+* interno ZF_MONTA_MOV_561. NÃO faz CALL FUNCTION remoto e NÃO posta
+* nem ativa nada no SAP.
+  if e_vbeln_vf is not initial.
+    refresh it_vbap_561.
+    select * from vbap into table it_vbap_561
+      where vbeln = wa_ordem
+        and matnr = 'B190'.
+    loop at it_vbap_561 into wa_vbap_561.
+      clear v_raube_561.
+      select single raube into v_raube_561 from mara
+        where matnr = wa_vbap_561-matnr.
+      if v_raube_561 = '3' or v_raube_561 = '03'.
+        wa_lgort_561 = wa_lgort.
+        if wa_lgort_561 is initial.
+          wa_lgort_561 = wa_vbap_561-lgort.
+        endif.
+        perform zf_monta_mov_561 using wa_vbap_561-matnr
+                                       wa_vbap_561-werks
+                                       wa_lgort_561
+                                       wa_vbap_561-kwmeng
+                                       wa_vbap_561-vrkme.
+      endif.
+    endloop.
+  endif.
+* Final Alteração  003 -     30.09.2026 ---------------------
 
   " Baixa de estoque Ordem ZRCN
 *  if wa_zcd_tb_notas-auart <> 'ZRCN'.
