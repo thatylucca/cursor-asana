@@ -823,7 +823,7 @@ form zf_exec_mov_562 using    p_matnr   type matnr
   ls_gm_head-doc_date   = sy-datum.
   ls_gm_head-pr_uname   = sy-uname.
 
-  ls_gm_code-gm_code = '03'. " MB1A - Outras saídas (movimento 562)
+  ls_gm_code-gm_code = '05'. " MB1C - par 561/562 (espelha a postagem manual)
 
   ls_gm_item-material  = p_matnr.
   ls_gm_item-plant     = p_werks.
